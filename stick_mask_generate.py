@@ -12,8 +12,30 @@ from mask_to_bbox import mask_to_bbox
 
 folder_name = 'temp_NHL_dataset'
 
+cat_names = ['blur', 'clear', 'none']
+cat_base_dir = folder_name.replace('temp', 'cat')
+cat_dirs = [os.path.join(cat_base_dir, c) for c in cat_names]
+cat_img_dirs = [os.path.join(c, "images") for c in cat_dirs]
+cat_mask_dirs = [os.path.join(c, "stick_mask") for c in cat_dirs]
+
 output_dir = folder_name.replace('temp', 'new')
 #print(output_dir)
+
+if not os.path.exists(cat_base_dir):
+    #create directory for categorized images
+    os.makedirs(cat_base_dir)
+    print("category directory created")
+
+#create category directories
+for d in cat_dirs:
+    if not os.path.exists(d):
+        os.makedirs(d)
+for d in cat_img_dirs:
+    if not os.path.exists(d):
+        os.makedirs(d)
+for d in cat_mask_dirs:
+    if not os.path.exists(d):
+        os.makedirs(d)
 
 if not os.path.exists(output_dir):
    # Create a new directory because it does not exist
@@ -36,7 +58,7 @@ player_bbox_path_list.sort()
 sam_checkpoint = "sam_vit_h_4b8939.pth"
 model_type = "vit_h"
 
-device = "cuda"
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
 sam.to(device=device)
@@ -246,6 +268,32 @@ def click_event(event, x, y, flags, params):
         cv2.imshow(window_name, result)
         #cv2.imshow(window_name, clone)
 
+def categorize(cat_id, image, img_name, mask, mask_name, mask_save_path):
+    mask_dest = os.path.join(cat_mask_dirs[cat_id], mask_name)
+    img_dest = os.path.join(cat_img_dirs[cat_id], img_name)
+
+    #check if image is being recategorized (dont want the same image in multiple categories)
+    for i in range(len(cat_names)):
+        c = cat_img_dirs[i]
+        m = cat_mask_dirs[i]
+        if os.path.exists(os.path.join(c, img_name)):
+            #os.path.join(c, img_name).rename(img_dest)
+            os.rename(os.path.join(c, img_name), img_dest)
+            if os.path.exists(os.path.join(m, mask_name)):
+                #os.path.join(m, mask_name).rename(mask_dest)
+                os.rename(os.path.join(m, mask_name), mask_dest)
+            print(f'Updated category. Changed from {cat_names[i]} to {cat_names[cat_id]}')
+            return
+    
+    #image has not yet been categorized
+    #copy mask to category folder (if exists)
+    if os.path.exists(mask_save_path):
+        cv2.imwrite(mask_dest, mask)
+
+    #save image to category
+    cv2.imwrite(img_dest, image)
+    print(f'Category: {cat_names[cat_id]}')
+
 window_name = 'image'
 
 # create output folder
@@ -264,8 +312,18 @@ if not os.path.exists(image_dir):
 
 
 idx = 0
+try:
+    last_image = open("last_image", "r+")
+    idx = int(last_image.read())
+    last_image.close()
+except FileNotFoundError:
+    pass
+except:
+    print("Unable to load last accessed image!")
 
 while idx < (len(image_path_list) - 1):
+    with open("last_image", "w+") as f:
+        f.write(str(idx))
 
     image = cv2.imread(image_path_list[idx])
     name = os.path.basename(image_path_list[idx]).split('.')[0]
@@ -330,6 +388,11 @@ while idx < (len(image_path_list) - 1):
             idx += 1
             break
 
+        elif press_key == ord('w'):
+            cv2.imwrite(img_save_path, image)
+            cv2.imwrite(mask_save_path, mask)
+            print('Written')
+
         elif press_key == ord('b'):
 
             idx -= 1
@@ -390,6 +453,30 @@ while idx < (len(image_path_list) - 1):
         elif press_key == ord('j'):
 
             idx += 10
+            break
+
+        elif press_key == ord('1'):
+            option = f'{cat_names[0]}'
+
+            categorize(0, image, img_name, mask, mask_name, mask_save_path)
+
+            idx+=1
+            break
+
+        elif press_key == ord('2'):
+            option = f'{cat_names[1]}'
+
+            categorize(1, image, img_name, mask, mask_name, mask_save_path)
+
+            idx+=1
+            break
+
+        elif press_key == ord('3'):
+            option = f'{cat_names[2]}'
+
+            categorize(2, image, img_name, mask, mask_name, mask_save_path)
+
+            idx+=1
             break
 
     #garbage collection
